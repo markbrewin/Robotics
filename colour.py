@@ -39,15 +39,48 @@ class colour:
         
         threshYelLow = numpy.array((20, 100, 100))
         threshYelHigh = numpy.array((30, 255, 255))
-        mask = cv2.inRange(imgHSV, threshYelLow, threshYelHigh)
+        
+        threshBluLow = numpy.array((110, 50, 50))
+        threshBluHigh = numpy.array((130, 255, 255))
+        
+        threshRedLow = numpy.array((0, 100, 100))
+        threshRedHigh = numpy.array((10, 255, 255))
+        
+        threshGreLow = numpy.array((36, 25, 25))
+        threshGreHigh = numpy.array((70, 255, 255))
+        
+        maskYellow = cv2.inRange(imgHSV, threshYelLow, threshYelHigh)
+        maskBlue = cv2.inRange(imgHSV, threshBluLow, threshBluHigh)
+        maskRed = cv2.inRange(imgHSV, threshRedLow, threshRedHigh)
+        maskGreen = cv2.inRange(imgHSV, threshGreLow, threshGreHigh)
 
         h, w, d = img.shape
         
-        M = cv2.moments(mask)
+        momentsAll = cv2.moments(maskYellow + maskBlue + maskRed + maskGreen)
         
-        if M['m00'] > 0:
-            cx = int(M['m10']/M['m00'])
-            cy = int(M['m01']/M['m00'])
+        if momentsAll['m00'] > 0:
+            
+            for colID in range(4):
+                if colID == 0:
+                    moments = cv2.moments(maskYellow)
+                    colour = "Yellow"
+                elif colID == 1:
+                    moments = cv2.moments(maskBlue)
+                    colour = "Blue"
+                elif colID == 2:
+                    moments = cv2.moments(maskRed)
+                    colour = "Red"
+                elif colID == 3:
+                    moments = cv2.moments(maskGreen)
+                    colour = "Green"
+                
+                if moments['m00'] > 0:
+                    break
+            
+            print(colour + " found. (" + str(colID) + ")")            
+            
+            cx = int(moments['m10']/moments['m00'])
+            cy = int(moments['m01']/moments['m00'])
             
             cv2.circle(img, (cx, cy), 20, (0, 0, 255), -1)
             
