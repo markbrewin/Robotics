@@ -27,3 +27,7 @@ roslaunch uol_turtlebot_simulator object-search-training.launch
 source ~/catkin_ws/devel/setup.bash
 spyder
 ```
+
+```
+rosrun rviz rviz
+```
