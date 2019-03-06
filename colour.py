@@ -5,14 +5,20 @@ Created on Mon Feb 25 15:15:44 2019
 @author: Mark Brewin
 """
 
-import rospy
+import actionlib
 import cv2
 import numpy
-from sensor_msgs.msg import Image, LaserScan
-from std_msgs.msg import String
-from geometry_msgs.msg import Twist
-from cv_bridge import CvBridge, CvBridgeError
+import rospy
 
+from cv_bridge import CvBridge, CvBridgeError
+from geometry_msgs.msg import Twist
+from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
+from sensor_msgs.msg import Image, LaserScan
+
+waypoints = [
+    [(2.1, 2.2, 0.0), (0.0, 0.0, 0.0, 1.0)],
+    [(6.5, 4.43, 0.0), (0.0, 0.0, 0.0, 0.0)]
+]
 
 class colourSearch:
 
@@ -104,9 +110,31 @@ class colourSearch:
     def callbackScan(self, data):   
         self.distance = data.ranges[len(data.ranges)/2]        
         print("Distance: " + str(self.distance))
+        
+def poseGoal(self, pose):
+    poseGoal = MoveBaseGoal()
+    poseGoal.target_pose.header.frame_id = 'map'
+    poseGoal.target_pose.pose.position.x = pose[0][0]
+    poseGoal.target_pose.pose.position.y = pose[0][1]
+    poseGoal.target_pose.pose.position.z = pose[0][2]
+    poseGoal.target_pose.pose.orientation.x = pose[1][0]
+    poseGoal.target_pose.pose.orientation.y = pose[1][1]
+    poseGoal.target_pose.pose.orientation.z = pose[1][2]
+    poseGoal.target_pose.pose.orientation.w = pose[1][3]
+    
+    return poseGoal
 
-
-colourSearch()
-rospy.init_node('colourSearch', anonymous=True)
-rospy.spin()
-cv2.destroyAllWindows()
+if __name__ == '__main__':
+    colourSearch()
+    rospy.init_node('colourSearch', anonymous=True)
+    
+    client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
+    client.wait_for_server()
+        
+    while True:
+        for pose in waypoints:
+            goal = poseGoal(pose)
+            client.send_goal(goal)
+            client.wait_for_result()
+    
+    cv2.destroyAllWindows()
