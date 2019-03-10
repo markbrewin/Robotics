@@ -31,3 +31,7 @@ spyder
 ```
 rosrun rviz rviz
 ```
+
+```
+rosrun rqt_graph rqt_graph
+```
