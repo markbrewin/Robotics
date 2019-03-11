@@ -16,8 +16,9 @@ from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from sensor_msgs.msg import Image, LaserScan
 
 waypoints = [
-    [(2.1, 2.2, 0.0), (0.0, 0.0, 0.0, 1.0)],
-    [(6.5, 4.43, 0.0), (0.0, 0.0, 0.0, 0.0)]
+    [(0.290, -5.080, 0.0), (0.0, 0.0, 0.7, 0.6)],
+    [(-4.145, 5.149, 0.0), (0.0, 0.0, 0.0, 1.0)],
+    [(-4.161, 0.316, 0.0), (0.0, 0.0, 0.0, 1.0)]
 ]
 
 class colourSearch:
@@ -111,7 +112,7 @@ class colourSearch:
         self.distance = data.ranges[len(data.ranges)/2]        
         print("Distance: " + str(self.distance))
         
-def poseGoal(self, pose):
+def poseGoal(pose):
     poseGoal = MoveBaseGoal()
     poseGoal.target_pose.header.frame_id = 'map'
     poseGoal.target_pose.pose.position.x = pose[0][0]
@@ -125,7 +126,7 @@ def poseGoal(self, pose):
     return poseGoal
 
 if __name__ == '__main__':
-    colourSearch()
+    #colourSearch()
     rospy.init_node('colourSearch', anonymous=True)
     
     client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
