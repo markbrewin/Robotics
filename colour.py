@@ -10,20 +10,23 @@ import cv2
 import numpy
 import rospy
 
+from smach import State, StateMachine
 from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import Twist
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from sensor_msgs.msg import Image, LaserScan
 
 waypoints = [
-    [(-0.030, 0.614, 0.0), (0.0, 0.0, 0.935, -0.297)], #Center Area    
-    [(2.473, -4.569, 0.0), (0.0, 0.0, 0.982, -0.188)], #Corridor Top
-    [(-2.124, -4.246, 0.0), (0.0, 0.0, 1, -0.026)], #Corridor Bottom
-    [(0.290, -5.080, 0.0), (0.0, 0.0, 0.7, 0.6)], #Corridor Center
-    [(-4.161, 0.316, 0.0), (0.0, 0.0, 0.0, 1.0)], #Offices
-    [(-4.145, 5.149, 0.0), (0.0, 0.0, 0.0, 1.0)], #Behind Table
-    [(1.167, 4.441, 0.0), (0.0, 0.0, -0.032, 0.995)] #Cupboards
+    [(-0.030, 0.614, 0.0), (0.0, 0.0, 0.935, -0.297), "Center Area"],
+    [(2.473, -4.569, 0.0), (0.0, 0.0, 0.982, -0.188), "Corridor Top"],
+    [(-2.124, -4.246, 0.0), (0.0, 0.0, 1, -0.026), "Corridor Bottom"],
+    [(0.290, -5.080, 0.0), (0.0, 0.0, 0.7, 0.6), "Corridor Center"],
+    [(-4.161, 0.316, 0.0), (0.0, 0.0, 0.0, 1.0), "Offices"],
+    [(-4.145, 5.149, 0.0), (0.0, 0.0, 0.0, 1.0), "Behind Table"],
+    [(1.167, 4.441, 0.0), (0.0, 0.0, -0.032, 0.995), "Cupboards"]
 ]
+
+client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
 
 class colourSearch:
 
@@ -115,31 +118,53 @@ class colourSearch:
     def callbackScan(self, data):   
         self.distance = data.ranges[len(data.ranges)/2]        
         print("Distance: " + str(self.distance))
+
+class Spin(State):
+    def __init__(self):
+        State.__init__(self, outcomes=['success'])
         
-def poseGoal(pose):
-    poseGoal = MoveBaseGoal()
-    poseGoal.target_pose.header.frame_id = 'map'
-    poseGoal.target_pose.pose.position.x = pose[0][0]
-    poseGoal.target_pose.pose.position.y = pose[0][1]
-    poseGoal.target_pose.pose.position.z = pose[0][2]
-    poseGoal.target_pose.pose.orientation.x = pose[1][0]
-    poseGoal.target_pose.pose.orientation.y = pose[1][1]
-    poseGoal.target_pose.pose.orientation.z = pose[1][2]
-    poseGoal.target_pose.pose.orientation.w = pose[1][3]
-    
-    return poseGoal
+    def execute(self, userdata):
+        print('spin')
+        #sleep(1)
+        return 'success'
+        
+class MoveToWaypoint(State):
+    def __init__(self, pose):
+        self.pose = pose
+        State.__init__(self, outcomes=['success'])
+        
+    def execute(self, userdata):
+        print(self.pose)        
+        
+        poseGoal = MoveBaseGoal()
+        poseGoal.target_pose.header.frame_id = 'map'
+        
+        poseGoal.target_pose.pose.position.x = self.pose[0][0]
+        poseGoal.target_pose.pose.position.y = self.pose[0][1]
+        poseGoal.target_pose.pose.position.z = self.pose[0][2]
+        
+        poseGoal.target_pose.pose.orientation.x = self.pose[1][0]
+        poseGoal.target_pose.pose.orientation.y = self.pose[1][1]
+        poseGoal.target_pose.pose.orientation.z = self.pose[1][2]
+        poseGoal.target_pose.pose.orientation.w = self.pose[1][3]        
+        
+        client.send_goal(poseGoal)
+        client.wait_for_result()        
+        
+        return 'success'
 
 if __name__ == '__main__':
     #colourSearch()
     rospy.init_node('colourSearch', anonymous=True)
     
-    client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
     client.wait_for_server()
-        
-    while True:
-        for pose in waypoints:
-            goal = poseGoal(pose)
-            client.send_goal(goal)
-            client.wait_for_result()
+    
+    search = StateMachine(outcomes=['success'])
+    with search:
+        for i, w in enumerate(waypoints):
+            StateMachine.add(w[2] + 'find', MoveToWaypoint(w), transitions={'success': w[2] + 'find'})
+            StateMachine.add(w[2] + 'spin', Spin(), transitions={'success': waypoints[(i + 1) % len(waypoints)][2] + 'find'})
+                              
+        search.execute()
     
     cv2.destroyAllWindows()
