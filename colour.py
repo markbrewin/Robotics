@@ -16,6 +16,20 @@ from geometry_msgs.msg import Twist
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from sensor_msgs.msg import Image, LaserScan
 
+found = [False, False, False, False]
+
+threshYelLow = numpy.array((20, 100, 100))
+threshYelHigh = numpy.array((30, 255, 255))
+
+threshBluLow = numpy.array((110, 50, 50))
+threshBluHigh = numpy.array((130, 255, 255))
+
+threshRedLow = numpy.array((0, 100, 100))
+threshRedHigh = numpy.array((10, 255, 255))
+
+threshGreLow = numpy.array((50, 100, 100))
+threshGreHigh = numpy.array((70, 255, 255))
+
 waypoints = [
     [(-0.030, 0.614, 0.0), (0.0, 0.0, 0.935, -0.297), "Center Area"],
     [(2.473, -4.569, 0.0), (0.0, 0.0, 0.982, -0.188), "Corridor Top"],
@@ -27,35 +41,51 @@ waypoints = [
 ]
 
 client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
+bridge = CvBridge()
 
-class colourSearch:
+def ColourCheck(ud, data):
+    try:
+        img = bridge.imgmsg_to_cv2(data, "bgr8")
+    except CvBridgeError, e:
+        print e
 
+    imgHSV = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    
+    maskYellow = cv2.inRange(imgHSV, threshYelLow, threshYelHigh)
+    maskBlue = cv2.inRange(imgHSV, threshBluLow, threshBluHigh)
+    maskRed = cv2.inRange(imgHSV, threshRedLow, threshRedHigh)
+    maskGreen = cv2.inRange(imgHSV, threshGreLow, threshGreHigh)
+
+    h, w, d = img.shape
+    
+    momentsAll = cv2.moments(maskYellow + maskBlue + maskRed + maskGreen)
+    
+    if momentsAll['m00'] > 0:
+        for colID in range(4):
+            if colID == 0:
+                moments = cv2.moments(maskYellow)
+            elif colID == 1:
+                moments = cv2.moments(maskBlue)
+            elif colID == 2:
+                moments = cv2.moments(maskRed)
+            elif colID == 3:
+                moments = cv2.moments(maskGreen)
+            
+            if moments['m00'] > 0 and found[colID] == False:   
+                return True
+            
+            else:
+                return False
+
+class MoveToColour(State):
     def __init__(self):
-        cv2.startWindowThread()
-        self.bridge = CvBridge()
+        State.__init__(self, outcomes=['success'])
+        
+        self.distance = 0;
         
         self.subImage = rospy.Subscriber("/camera/rgb/image_raw", Image, self.callbackImage)
         self.subScan = rospy.Subscriber("/scan", LaserScan, self.callbackScan)
-                                          
-        self.pubCmdVel = rospy.Publisher('/mobile_base/commands/velocity', Twist, queue_size=1)
         
-        self.twist = Twist()
-        
-        self.distance = 0        
-        self.found = [False, False, False, False]
-        
-        self.threshYelLow = numpy.array((20, 100, 100))
-        self.threshYelHigh = numpy.array((30, 255, 255))
-        
-        self.threshBluLow = numpy.array((110, 50, 50))
-        self.threshBluHigh = numpy.array((130, 255, 255))
-        
-        self.threshRedLow = numpy.array((0, 100, 100))
-        self.threshRedHigh = numpy.array((10, 255, 255))
-        
-        self.threshGreLow = numpy.array((50, 100, 100))
-        self.threshGreHigh = numpy.array((70, 255, 255))
-
     def callbackImage(self, data):
         cv2.namedWindow("Image window", 1)
         
@@ -90,7 +120,7 @@ class colourSearch:
                     moments = cv2.moments(maskGreen)
                     colour = "Green"
                 
-                if moments['m00'] > 0 and self.found[colID] == False and self.distance > 1:                           
+                if moments['m00'] > 0 and found[colID] == False and self.distance > 1:                           
                     cx = int(moments['m10']/moments['m00'])
                     cy = int(moments['m01']/moments['m00'])
                     
@@ -105,29 +135,19 @@ class colourSearch:
                     
                     break
                 
-                elif moments['m00'] > 0 and self.found[colID] == False and self.distance <= 1:
+                elif moments['m00'] > 0 and found[colID] == False and self.distance <= 1:
                     print(colour + " found. (" + str(colID) + ")")
-                    self.found[colID] = True
-                    print self.found
-        
-                    break
+                    found[colID] = True
+                    print found
+                    
+                    return 'success'
             
         cv2.imshow("Image window", img)
         cv2.waitKey(1)
         
     def callbackScan(self, data):   
-        self.distance = data.ranges[len(data.ranges)/2]        
-        print("Distance: " + str(self.distance))
+        self.distance = data.ranges[len(data.ranges)/2]
 
-class Spin(State):
-    def __init__(self):
-        State.__init__(self, outcomes=['success'])
-        
-    def execute(self, userdata):
-        print('spin')
-        #sleep(1)
-        return 'success'
-        
 class MoveToWaypoint(State):
     def __init__(self, w):
         self.pose = waypoints[w]
@@ -152,23 +172,45 @@ class MoveToWaypoint(State):
         client.wait_for_result()
         
         return 'success'
+        
+class Spin(State):
+    def __init__(self):
+        State.__init__(self, outcomes=['success'])
+        
+    def execute(self, userdata):
+        print('spin')
+        #sleep(1)
+        return 'success'
 
 if __name__ == '__main__':
-    #colourSearch()
     rospy.init_node('colourSearch', anonymous=True)
     
-    client.wait_for_server()
+    client.wait_for_server()   
     
-    search = StateMachine(outcomes=['success'])
-    with search:
+    searchState = StateMachine(outcomes=['success'])
+    with searchState:
+    
+        StateMachine.add('MoveToColour', MoveToColour(), 
+                         transitions={'success': 'MoveToWaypoint0'})        
+        
         for w in range(len(waypoints)):
-            StateMachine.add('MoveToWaypoint' + str(w), MoveToWaypoint(w), transitions={'success': 'SearchForColour' + str(w)})
+            StateMachine.add('MoveToWaypoint' + str(w), 
+                         MonitorState("/camera/rgb/image_raw", Image, ColourCheck),
+                         transitions = {'invalid': 'Waypoint' + str(w),
+                                        'valid': 'MoveToColour'})            
+            
+            StateMachine.add('Waypoint' + str(w), MoveToWaypoint(w),
+                             transitions={'success': 'SearchForColour' + str(w)})
             
             if w < len(waypoints) - 1:
-                StateMachine.add('SearchForColour' + str(w), Spin(), transitions={'success': 'MoveToWaypoint' + str(w + 1)})
+                StateMachine.add('SearchForColour' + str(w), Spin(),
+                                 transitions={'success': 'MoveToWaypoint' + str(w + 1)})
             else:
-                StateMachine.add('SearchForColour' + str(w), Spin(), transitions={'success': 'MoveToWaypoint0'})
+                StateMachine.add('SearchForColour' + str(w), Spin(),
+                                 transitions={'success': 'MoveToWaypoint'})
                               
-        search.execute()
+        searchState.execute()
+        
+    colourSearch(searchState)
     
     cv2.destroyAllWindows()
