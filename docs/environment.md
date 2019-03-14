@@ -1,9 +1,16 @@
 # Environment Setup
-
+## Installation
 ```
 sudo apt-get update
 sudo apt-get upgrade
+sudo apt-get install ros-kinetic-uol-cmp3103m
 ```
+
+Needed if there are conflicting packages:
+```
+sudo apt-get purge "*gazebo*"
+```
+## Setup
 
 ```
 mkdir -p ~/catkin_ws/src; cd ~/catkin_ws/src; catkin_init_workspace .;
