@@ -129,8 +129,8 @@ class Spin(State):
         return 'success'
         
 class MoveToWaypoint(State):
-    def __init__(self, pose):
-        self.pose = pose
+    def __init__(self, w):
+        self.pose = waypoints[w]
         State.__init__(self, outcomes=['success'])
         
     def execute(self, userdata):
@@ -149,7 +149,7 @@ class MoveToWaypoint(State):
         poseGoal.target_pose.pose.orientation.w = self.pose[1][3]        
         
         client.send_goal(poseGoal)
-        client.wait_for_result()        
+        client.wait_for_result()
         
         return 'success'
 
@@ -161,9 +161,13 @@ if __name__ == '__main__':
     
     search = StateMachine(outcomes=['success'])
     with search:
-        for i, w in enumerate(waypoints):
-            StateMachine.add(w[2] + 'find', MoveToWaypoint(w), transitions={'success': w[2] + 'find'})
-            StateMachine.add(w[2] + 'spin', Spin(), transitions={'success': waypoints[(i + 1) % len(waypoints)][2] + 'find'})
+        for w in range(len(waypoints)):
+            StateMachine.add('MoveToWaypoint' + str(w), MoveToWaypoint(w), transitions={'success': 'SearchForColour' + str(w)})
+            
+            if w > len(waypoints):
+                StateMachine.add('SearchForColour' + str(w), Spin(), transitions={'success': 'MoveToWaypoint' + str(w + 1)})
+            else:
+                StateMachine.add('SearchForColour' + str(w), Spin(), transitions={'success': 'MoveToWaypoint0'})
                               
         search.execute()
     
