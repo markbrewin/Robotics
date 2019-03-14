@@ -164,7 +164,7 @@ if __name__ == '__main__':
         for w in range(len(waypoints)):
             StateMachine.add('MoveToWaypoint' + str(w), MoveToWaypoint(w), transitions={'success': 'SearchForColour' + str(w)})
             
-            if w > len(waypoints):
+            if w < len(waypoints) - 1:
                 StateMachine.add('SearchForColour' + str(w), Spin(), transitions={'success': 'MoveToWaypoint' + str(w + 1)})
             else:
                 StateMachine.add('SearchForColour' + str(w), Spin(), transitions={'success': 'MoveToWaypoint0'})
