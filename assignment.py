@@ -17,9 +17,7 @@ from sensor_msgs.msg import Image, LaserScan
 from std_msgs.msg import String
 
 class assignment:
-    def __init__(self):
-        cv2.startWindowThread()        
-        
+    def __init__(self): 
         self.bridge = CvBridge()
         self.client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
         self.client.wait_for_server() 
@@ -34,12 +32,12 @@ class assignment:
         self.found = [False, False, False, False]
         self.twist = Twist() 
         
-        self.threshYelLow = numpy.array((20, 100, 100))
-        self.threshYelHigh = numpy.array((30, 255, 255))
-        self.threshBluLow = numpy.array((110, 50, 50))
-        self.threshBluHigh = numpy.array((130, 255, 255))
-        self.threshRedLow = numpy.array((0, 100, 100))
-        self.threshRedHigh = numpy.array((10, 255, 255))
+        self.threshYelLow = numpy.array((20, 100, 100))#Needs fixing
+        self.threshYelHigh = numpy.array((30, 255, 255))#Needs fixing
+        self.threshBluLow = numpy.array((110, 50, 50))#Needs fixing
+        self.threshBluHigh = numpy.array((130, 255, 255))#Needs fixing
+        self.threshRedLow = numpy.array((0, 100, 100))#Needs fixing
+        self.threshRedHigh = numpy.array((10, 255, 255))#Needs fixing
         self.threshGreLow = numpy.array((50, 100, 100))
         self.threshGreHigh = numpy.array((70, 255, 255))
         
@@ -71,18 +69,18 @@ class assignment:
         goal.target_pose.pose.orientation.z = waypoint[1][2]
         goal.target_pose.pose.orientation.w = waypoint[1][3]
         
-        self.log.publish("Moving to Waypoint")        
+        self.log.publish("Moving to Waypoint: " + waypoint[2])        
         
         self.client.send_goal(goal, done_cb = self.waypointReached)    
         
     def waypointReached(self, state, result):
         if state == actionlib.GoalStatus.SUCCEEDED:
+            self.log.publish("Waypoint Reached")            
+            
             self.curWaypoint += 1
             self.setNextWaypoint()
     
     def callbackImage(self, data):
-        cv2.namedWindow("Robot Cam", 1)
-        
         try:
             img = self.bridge.imgmsg_to_cv2(data, "bgr8")
         except CvBridgeError, e:
@@ -94,7 +92,7 @@ class assignment:
         maskBlue = cv2.inRange(imgHSV, self.threshBluLow, self.threshBluHigh)
         maskRed = cv2.inRange(imgHSV, self.threshRedLow, self.threshRedHigh)
         maskGreen = cv2.inRange(imgHSV, self.threshGreLow, self.threshGreHigh)
-        mask = maskYellow + maskBlue + maskRed + maskGreen
+        mask = maskGreen
 
         h, w, d = img.shape
         
@@ -107,6 +105,8 @@ class assignment:
         momentsAll = cv2.moments(mask)
         
         if momentsAll['m00'] > 0:
+            self.log.publish("Potential target found.")            
+            
             for colID in range(4):
                 if colID == 0:
                     moments = cv2.moments(maskYellow)
@@ -117,7 +117,8 @@ class assignment:
                 elif colID == 3:
                     moments = cv2.moments(maskGreen)
                 
-                if moments['m00'] > 0 and self.found[colID] == False and self.distance > 1:   
+                if moments['m00'] > 0 and self.found[colID] == False and self.distance > 1:  
+                    self.log.publish("Moving towards target: " + str(colID))
                     self.client.cancel_all_goals()
         
                     cx = int(moments['m10']/moments['m00'])
@@ -134,12 +135,16 @@ class assignment:
                     
                     break
                 
-                elif moments['m00'] > 0 and self.found[colID] == False and self.distance <= 1:
+                elif moments['m00'] > 0 and self.found[colID] == False and self.distance <= 1:                    
                     self.found[colID] = True
+                    
+                    self.log.publish("Reached target: " + str(colID))
+                    self.log.publish(str(self.found))
+                    
+                    rospy.sleep(2)
+                    
                     self.curWaypoint += 1
                     self.setNextWaypoint()
-        
-        cv2.imshow("Robot Cam", img)
                     
     def callbackScan(self, data):   
         self.distance = data.ranges[len(data.ranges)/2]
