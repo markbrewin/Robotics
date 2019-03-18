@@ -9,8 +9,10 @@ import actionlib
 import cv2
 import numpy
 import rospy
+import smach_ros
 
 from smach import State, StateMachine
+from smach_ros import MonitorState
 from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import Twist
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
@@ -81,25 +83,32 @@ class MoveToColour(State):
     def __init__(self):
         State.__init__(self, outcomes=['success'])
         
+    def execute(self, userdata):
+        cv2.startWindowThread()        
+                
         self.distance = 0;
         
         self.subImage = rospy.Subscriber("/camera/rgb/image_raw", Image, self.callbackImage)
         self.subScan = rospy.Subscriber("/scan", LaserScan, self.callbackScan)
         
+        self.pubCmdVel = rospy.Publisher('/mobile_base/commands/velocity', Twist, queue_size=1)
+        
+        self.twist = Twist()        
+        
     def callbackImage(self, data):
         cv2.namedWindow("Image window", 1)
         
         try:
-            img = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            img = bridge.imgmsg_to_cv2(data, "bgr8")
         except CvBridgeError, e:
             print e
 
         imgHSV = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         
-        maskYellow = cv2.inRange(imgHSV, self.threshYelLow, self.threshYelHigh)
-        maskBlue = cv2.inRange(imgHSV, self.threshBluLow, self.threshBluHigh)
-        maskRed = cv2.inRange(imgHSV, self.threshRedLow, self.threshRedHigh)
-        maskGreen = cv2.inRange(imgHSV, self.threshGreLow, self.threshGreHigh)
+        maskYellow = cv2.inRange(imgHSV, threshYelLow, threshYelHigh)
+        maskBlue = cv2.inRange(imgHSV, threshBluLow, threshBluHigh)
+        maskRed = cv2.inRange(imgHSV, threshRedLow, threshRedHigh)
+        maskGreen = cv2.inRange(imgHSV, threshGreLow, threshGreHigh)
 
         h, w, d = img.shape
         
@@ -188,16 +197,13 @@ if __name__ == '__main__':
     client.wait_for_server()   
     
     searchState = StateMachine(outcomes=['success'])
-    with searchState:
-    
-        StateMachine.add('MoveToColour', MoveToColour(), 
-                         transitions={'success': 'MoveToWaypoint0'})        
-        
+    with searchState:        
         for w in range(len(waypoints)):
             StateMachine.add('MoveToWaypoint' + str(w), 
                          MonitorState("/camera/rgb/image_raw", Image, ColourCheck),
                          transitions = {'invalid': 'Waypoint' + str(w),
-                                        'valid': 'MoveToColour'})            
+                                        'valid': 'MoveToColour',
+                                        'preempted': 'Waypoint' + str(w)})            
             
             StateMachine.add('Waypoint' + str(w), MoveToWaypoint(w),
                              transitions={'success': 'SearchForColour' + str(w)})
@@ -207,10 +213,12 @@ if __name__ == '__main__':
                                  transitions={'success': 'MoveToWaypoint' + str(w + 1)})
             else:
                 StateMachine.add('SearchForColour' + str(w), Spin(),
-                                 transitions={'success': 'MoveToWaypoint'})
-                              
-        searchState.execute()
-        
-    colourSearch(searchState)
+                                 transitions={'success': 'MoveToWaypoint0'})
+                     
+        StateMachine.add('MoveToColour', MoveToColour(), transitions={'success': 'MoveToWaypoint0'})       
+    
+    sis = smach_ros.IntrospectionServer('server_name', searchState, '/SM_ROOT')
+    sis.start()    
+    searchState.execute()
     
     cv2.destroyAllWindows()
