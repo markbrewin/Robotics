@@ -28,27 +28,36 @@ class assignment:
         self.veloc = rospy.Publisher('/mobile_base/commands/velocity', Twist, queue_size=1)
         
         self.curWaypoint = 0
+        self.targetSearch = True
         self.distance = 0
-        self.found = [False, False, False, False]
+        self.found = [["Yellow", False],
+                      ["Blue", False],
+                      ["Red", False],
+                      ["Green", False]]
         self.twist = Twist() 
         
         self.threshYelLow = numpy.array((20, 100, 100))#Needs fixing
         self.threshYelHigh = numpy.array((30, 255, 255))#Needs fixing
-        self.threshBluLow = numpy.array((110, 50, 50))#Needs fixing
-        self.threshBluHigh = numpy.array((130, 255, 255))#Needs fixing
-        self.threshRedLow = numpy.array((0, 100, 100))#Needs fixing
-        self.threshRedHigh = numpy.array((10, 255, 255))#Needs fixing
+        self.threshBluLow = numpy.array((90, 200, 30))
+        self.threshBluHigh = numpy.array((120, 255, 230))
+        self.threshRedLow = numpy.array((0, 200, 30))
+        self.threshRedHigh = numpy.array((5, 255, 150))
         self.threshGreLow = numpy.array((50, 100, 100))
         self.threshGreHigh = numpy.array((70, 255, 255))
         
         self.waypoints = [
-            [(-0.030, 0.614, 0.0), (0.0, 0.0, 0.935, -0.297), "Center Area"],
+            [(-0.030, 0.614, 0.0), (0.0, 0.0, 0.935, -0.297), "Centre (Start)"],
             [(2.473, -4.569, 0.0), (0.0, 0.0, 0.982, -0.188), "Corridor Top"],
             [(-2.124, -4.246, 0.0), (0.0, 0.0, 1, -0.026), "Corridor Bottom"],
-            [(0.290, -5.080, 0.0), (0.0, 0.0, 0.7, 0.6), "Corridor Center"],
-            [(-4.161, 0.316, 0.0), (0.0, 0.0, 0.0, 1.0), "Offices"],
+            [(0.290, -4.569, 0.0), (0.0, 0.0, 0.7, 0.6), "Corridor Center"],
+            [(1.581, -2.136, 0.0), (0.0, 0.0, 0.320, 0.947), "Corridor Exit"],
+            [(-4.161, 0.316, 0.0), (0.0, 0.0, 0.0, 1.0), "Room 1"],
+            [(-3.701, 2.762, 0.0), (0.0, 0.0, -0.230, 0.973), "Room 2"],
             [(-4.145, 5.149, 0.0), (0.0, 0.0, 0.0, 1.0), "Behind Table"],
-            [(1.167, 4.441, 0.0), (0.0, 0.0, -0.032, 0.995), "Cupboards"]
+            [(-3.994, -1.778, 0.0), (0.0, 0.0, 0.011, 0.918), "Room Exit"],
+            [(3.026, 4.441, 0.0), (0.0, 0.0, -0.032, 0.995), "Cupboards"],
+            [(1.047, 4.553, 0.0), (0.0, 0.0, 0.988, 0.153), "Infront of Table"],
+            [(2.816, 2.307, 0.0), (0.0, 0.0, -0.-0.642, 0.766), "Centre (Back)"]
         ]
         
         self.setNextWaypoint()
@@ -69,14 +78,29 @@ class assignment:
         goal.target_pose.pose.orientation.z = waypoint[1][2]
         goal.target_pose.pose.orientation.w = waypoint[1][3]
         
-        self.log.publish("Moving to Waypoint: " + waypoint[2])        
+        self.log.publish("Moving to Waypoint: " + waypoint[2])      
         
         self.client.send_goal(goal, done_cb = self.waypointReached)    
         
+    def targetTimeout(self):
+        rospy.sleep(10)
+        self.targetSearch = False
+        self.setNextWaypoint()
+        rospy.sleep(3)
+        self.targetSearch = True
+        
     def waypointReached(self, state, result):
         if state == actionlib.GoalStatus.SUCCEEDED:
-            self.log.publish("Waypoint Reached")            
+            self.log.publish("Waypoint Reached")                        
+            self.curWaypoint += 1
+            self.setNextWaypoint()
             
+        elif state == actionlib.GoalStatus.PREEMPTED:
+            self.log.publish("Waypoint Cancelled")
+            self.targetTimeout()
+            
+        elif state == actionlib.GoalStatus.ABORTED:
+            self.log.publish("Waypoint Aborted")
             self.curWaypoint += 1
             self.setNextWaypoint()
     
@@ -92,7 +116,7 @@ class assignment:
         maskBlue = cv2.inRange(imgHSV, self.threshBluLow, self.threshBluHigh)
         maskRed = cv2.inRange(imgHSV, self.threshRedLow, self.threshRedHigh)
         maskGreen = cv2.inRange(imgHSV, self.threshGreLow, self.threshGreHigh)
-        mask = maskGreen
+        mask = maskYellow + maskBlue + maskRed + maskGreen
 
         h, w, d = img.shape
         
@@ -104,8 +128,15 @@ class assignment:
         
         momentsAll = cv2.moments(mask)
         
-        if momentsAll['m00'] > 0:
-            self.log.publish("Potential target found.")            
+        if self.found[0][1] and self.found[1][1] and self.found[2][1] and self.found[3][1]:
+            self.laser.unregister()
+            self.cam.unregister()
+            self.client.cancel_all_goals()
+            self.log.publish("All objects found.")
+            self.log.unregister()
+            
+        elif momentsAll['m00'] > 0 and self.targetSearch:
+            #self.log.publish("Potential target found.")            
             
             for colID in range(4):
                 if colID == 0:
@@ -117,8 +148,8 @@ class assignment:
                 elif colID == 3:
                     moments = cv2.moments(maskGreen)
                 
-                if moments['m00'] > 0 and self.found[colID] == False and self.distance > 1:  
-                    self.log.publish("Moving towards target: " + str(colID))
+                if moments['m00'] > 0 and self.found[colID][1] == False and self.distance > 1:  
+                    self.log.publish("Moving towards target: " + self.found[colID][0])
                     self.client.cancel_all_goals()
         
                     cx = int(moments['m10']/moments['m00'])
@@ -135,10 +166,10 @@ class assignment:
                     
                     break
                 
-                elif moments['m00'] > 0 and self.found[colID] == False and self.distance <= 1:                    
-                    self.found[colID] = True
+                elif moments['m00'] > 0 and self.found[colID][1] == False and self.distance <= 1:                    
+                    self.found[colID][1] = True
                     
-                    self.log.publish("Reached target: " + str(colID))
+                    self.log.publish("Reached target: " + self.found[colID][0])
                     self.log.publish(str(self.found))
                     
                     rospy.sleep(2)
