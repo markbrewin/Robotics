@@ -3,6 +3,10 @@
 Created on Mon Mar 18 02:57:10 2019
 
 @author: Mark Brewin
+
+
+References:
+Quigley, M., Gerkey, B. and Smart, W. (2015). Programming Robots with ROS. 1st ed. Sebastopol: O'Reilly.
 """
 
 import actionlib
